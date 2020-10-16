@@ -1,0 +1,3 @@
+[submodule "py-spidev"]
+	path = py-spidev
+	url = https://github.com/xalogic-open/py-spidev.git
