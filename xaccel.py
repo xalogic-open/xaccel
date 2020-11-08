@@ -8,15 +8,15 @@ import time
 
 class Xaccel:
   def __init__(self, busType="spi", spiBus=0, spiDevice=0, spiSpeed=60000000, xa_blocksize=3072,
-              sendDummy=0,
+              doubleBuf=1,
               ):
     self.busType = busType
     self.spiBus = spiBus
     self.spiDevice = spiDevice
     self.spiSpeed = spiSpeed
     self.xa_blocksize = xa_blocksize
-    self.sendDummy = sendDummy
-    self.__version__ = "1.0.0"
+    self.doubleBuf = doubleBuf
+    self.__version__ = "1.0.1"
     self.modelName = ""
 
 
@@ -38,7 +38,7 @@ class Xaccel:
 ################################################
 # AI Processor Init
 ################################################
-  def aiModelInit(self, modelName="masknomask", width=320, height=224):
+  def aiModelInit(self, modelName="masknomask", width=320, height=224, channel=3):
     modelSupported = ["masknomask", "face5"]
     if (modelName in modelSupported):
       self.imgWidth = width
@@ -51,6 +51,15 @@ class Xaccel:
       self.cvCircleD                = 2
       self.cvCircleColor             = (0,0,255)
       self.cvBoxColor = [(0,255,0), (0,0,255)]
+
+
+      self.imgSelect = 0
+      self.img0 = np.empty((height, width, channel), dtype=np.uint8)
+
+      if self.doubleBuf:
+        self.img1 = np.empty((height, width, channel), dtype=np.uint8)
+        self.send_dummy_frame(width,height,channel)
+
       return 0
     else:
       self.modelName = ""
@@ -61,11 +70,26 @@ class Xaccel:
 ################################################
   def aiModelProcessDraw(self, img):
 
-    if (self.modelName == "masknomask"):
-      img = self.image_resize(img, width=self.imgWidth, height=self.imgHeight)
-      self.spi_send_img(img)
-      boxes = self.spi_getbox()
+    if (self.doubleBuf):
+      if (self.imgSelect == 0):
+        self.img0 = self.image_resize(img, width=self.imgWidth, height=self.imgHeight)
+        imgProc = self.img0
+        img = self.img1
+      else:
+        self.img1 = self.image_resize(img, width=self.imgWidth, height=self.imgHeight)
+        imgProc = self.img1
+        img = self.img0
+      self.imgSelect = ~self.imgSelect 
+    else:
+      self.img0 = self.image_resize(img, width=self.imgWidth, height=self.imgHeight)
+      imgProc = self.img0
+      img = self.img0
 
+
+
+    if (self.modelName == "masknomask"):
+      self.spi_send_img(imgProc)
+      boxes = self.spi_getbox()
 
       if len(boxes) > 0 and boxes[0] != "na":
         for box in boxes:
@@ -82,9 +106,10 @@ class Xaccel:
           cv2.putText(img, text, (x1, y1-5), self.cvFont,self.cvFontWidth,self.cvBoxColor[boxclass[0]], self.cvlineWidth)
           cv2.rectangle(img, (x1, y1), (x2, y2), self.cvBoxColor[boxclass[0]], self.cvlineWidth)
       return img
+
     elif (self.modelName == "face5"):
-      img = self.image_resize(img, width=self.imgWidth, height=self.imgHeight)
-      self.spi_send_img(img)
+
+      self.spi_send_img(imgProc)
       metas = np.asarray(self.spi_getmeta(True, 32), dtype=np.dtype('b'))
       nummeta = len(metas)>>5
 
@@ -154,6 +179,7 @@ class Xaccel:
         lm5y = int(lm5y[0])
 
         text = "{:.2f}".format(prob[0])
+
 
         if prob[0] > 0.1:
           cv2.putText(img, text, (x1, y1-5), self.cvFont,self.cvFontWidth,self.cvCircleColor, self.cvlineWidth)
@@ -240,11 +266,12 @@ class Xaccel:
 ################################################
 # Send a Dummy Frame
 ################################################
-  def send_dummy_frame(self):
+  def send_dummy_frame(self, width, height, channel):
     #Send a dummy image over, this is to fill pipeline
     #This would make the processing a little faster
     #However, meta returned is for previous frame
-    img = np.empty((224, 320, 3), dtype=np.uint8)
+    #img = np.empty((224, 320, 3), dtype=np.uint8)
+    img = np.empty((height, width, channel), dtype=np.uint8)
     self.spi_send_img(img)
 
 ################################################
@@ -256,8 +283,6 @@ class Xaccel:
       self.spi.open(self.spiBus, self.spiDevice)
       self.spi.max_speed_hz = self.spiSpeed
       self.spi.xa_blocksize = self.xa_blocksize
-      if self.sendDummy:
-        self.send_dummy_frame()
 
 ################################################
 # Takes a full image (BGR) from application 
@@ -361,120 +386,7 @@ class Xaccel:
     else :
       return None
 
-################################################
-# SPI read from FIFO
-# The address is 0xA0.
-# For read, a dummy byte is needed, 
-#   so we simply send the address twice.
-# Because of the 2 cycle, we need to delete
-#   2 bytes from the received data.
-################################################
-  def spi_rx(self,txdata):
-    if self.busType == "spi":
-      txdata = txdata.tolist()
-      txdata.insert(0,0xA0)
-      txdata.insert(0,0xA0) #Dummy cycle
-      #rxdata = self.spi.xfer2(txdata)
-      rxdata = self.spi.xfer2(txdata,self.spiSpeed,0)
-      del rxdata[0] #Not real data
-      del rxdata[0] #Not real data
-      return rxdata
-    else:
-      return None
-
     
-################################################
-# SPI write to FIFO
-# The address is 0x10, followed by data.
-################################################
-  def spi_tx(self,txdata):
-    if self.busType == "spi":
-      txdata = np.insert(txdata,0,0x10,axis=0)
-      self.spi.writebytes2(txdata)
-    return
-
-
-################################################
-# SPI read from FIFO
-# The address is 0xA0.
-# For read, a dummy byte is needed, 
-#   so we simply send the address twice.
-# Because of the 2 cycle, we need to delete
-#   2 bytes from the received data.
-################################################
-  def spi_rx(self,txdata):
-    if self.busType == "spi":
-      txdata = txdata.tolist()
-      txdata.insert(0,0xA0)
-      txdata.insert(0,0xA0) #Dummy cycle
-      #print(np.shape(txdata))
-      #print(txdata)
-      #txdata = np.insert(txdata,0,0xA0,axis=0)
-      #txdata = np.insert(txdata,0,0xA0,axis=0)
-      #print(np.shape(txdata))
-      #print(txdata)
-      rxdata = self.spi.xfer2(txdata)
-      #rxdata = self.spi.xfer3(txdata,self.spiSpeed,0)
-      #rxdata = self.spi.xfer3(txdata)
-      del rxdata[0] #Not real data
-      del rxdata[0] #Not real data
-      return rxdata
-    else:
-      return None
-
-    
-################################################
-# Check the amount of space avaialable in FIFO
-# Address 0x88 : wr_space[7:0]
-# Address 0x89 : wr_space[15:8]
-################################################
-  def spi_wrspace(self):
-    if self.busType == "spi":
-      cmd = []
-      cmd.append(0x88) #Address 
-      cmd.append(0x00) #Dummy cycle
-      cmd.append(0x00) #Read data
-      rddata = self.spi.xfer2(cmd)
-      wr_space = rddata[2]
-
-      cmd = []
-      cmd.append(0x89) #Address
-      cmd.append(0x00) #Dummy cycle
-      cmd.append(0x00) #Read data
-      rddata = self.spi.xfer2(cmd)
-      wr_space = rddata[2]*256 + wr_space #Pack it to 16 bits
-
-      return wr_space
-    else:
-      return None
-
-################################################
-# Check the amount of data in FIFO to be read
-# Address 0x8A : rd_avail[7:0]
-# Address 0x8B : rd_avail[15:8]
-################################################
-  def spi_rdavail(self):
-    if self.busType == "spi":
-      cmd = []
-      cmd.append(0x8A) #Address
-      cmd.append(0x00) #Dummy cycle
-      cmd.append(0x00) #Read data
-      rddata = self.spi.xfer2(cmd)
-      rd_avail = rddata[2]
-
-      cmd = []
-      cmd.append(0x8B) #Address
-      cmd.append(0x00) #Dummy cycle
-      cmd.append(0x00) #Read data
-      rddata = self.spi.xfer2(cmd)
-      rd_avail = rddata[2]*256 + rd_avail #Pack it to 16 bits
-      return rd_avail
-    else:
-      return None
-
-
-    
-
 ################################################
 # Read Version of Board
 # When reading a register, bit[7] is always "1"

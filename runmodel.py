@@ -17,9 +17,9 @@ def main(model, noupdate):
     try:
 
       if (model == "masknomask"):
-        kflash.process(terminal=False, file="models/K210AIAccel_MaskNoMask_1-0-0.bin")
+        kflash.process(terminal=False, file="models/K210AIAccel_MaskNoMask_1-0-1.bin")
       elif (model == "face5"):
-        kflash.process(terminal=False, file="models/K210AIAccel_Face5_1-0-0.bin")
+        kflash.process(terminal=False, file="models/K210AIAccel_Face5_1-0-1.bin")
 
     except Exception as e:
       if str(e) == "Burn SRAM OK":
