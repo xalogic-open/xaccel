@@ -16,7 +16,7 @@ class Xaccel:
     self.spiSpeed = spiSpeed
     self.xa_blocksize = xa_blocksize
     self.doubleBuf = doubleBuf
-    self.__version__ = "1.0.1"
+    self.__version__ = "1.0.2"
     self.modelName = ""
 
 
@@ -39,12 +39,15 @@ class Xaccel:
 # AI Processor Init
 ################################################
   def aiModelInit(self, modelName="masknomask", width=320, height=224, channel=3):
-    modelSupported = ["masknomask", "face5"]
+    modelSupported = ["masknomask", "face5", "safetyhat"]
     if (modelName in modelSupported):
       self.imgWidth = width
       self.imgHeight = height
       self.modelName = modelName
-      self.className = ["Mask", "NoMask"]
+      if modelName == "masknomask":
+          self.className = ["Mask", "NoMask"]
+      elif modelName == "safetyhat":
+          self.className = ["SafetyHat", "NoHat"]
       self.cvFont                   = cv2.FONT_HERSHEY_SIMPLEX
       self.cvFontWidth              = 0.5
       self.cvlineWidth              = 1
@@ -87,7 +90,7 @@ class Xaccel:
 
 
 
-    if (self.modelName == "masknomask"):
+    if (self.modelName == "masknomask" or self.modelName == "safetyhat"):
       self.spi_send_img(imgProc)
       boxes = self.spi_getbox()
 

@@ -20,6 +20,8 @@ def main(model, noupdate):
         kflash.process(terminal=False, file="models/K210AIAccel_MaskNoMask_1-0-1.bin")
       elif (model == "face5"):
         kflash.process(terminal=False, file="models/K210AIAccel_Face5_1-0-1.bin")
+      elif (model == "safetyhat"):
+        kflash.process(terminal=False, file="models/K210AIAccel_Safetyhat_1-0-0.bin")
 
     except Exception as e:
       if str(e) == "Burn SRAM OK":
@@ -51,6 +53,9 @@ def main(model, noupdate):
   elif (model == "face5"):
     imgWidth = 320
     imgHeight = 240
+  elif (model == "safetyhat"):
+    imgWidth = 320
+    imgHeight = 224
   
   xaccel.aiModelInit(modelName=model, width=imgWidth, height=imgHeight)
  
@@ -88,7 +93,7 @@ def main(model, noupdate):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, required=True, help='Choose the AI model to run.', choices=['masknomask', 'face5'])
+    parser.add_argument('--model', type=str, required=True, help='Choose the AI model to run.', choices=['masknomask', 'face5', 'safetyhat'])
     parser.add_argument('--noupdate',action="store_true", help='When defined, the model will be not be reloaded into flash. This would be faster to start.')
 
     args = parser.parse_args(sys.argv[1:])
